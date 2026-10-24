@@ -1,0 +1,740 @@
+{
+  "name": "Email Triage Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Simulated inbox",
+        "formDescription": "Paste an email here to send it to the triage agent.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "From (email address)",
+              "fieldType": "email",
+              "fieldName": "sender_email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Subject",
+              "fieldName": "subject",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Email body",
+              "fieldType": "textarea",
+              "fieldName": "body",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        0
+      ],
+      "id": "03f8781d-ebb0-4f8d-8b1d-620d40f25c29",
+      "name": "Incoming email",
+      "webhookId": "75ea401e-7f38-46de-9470-73d50ed43a8a"
+    },
+    {
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {
+          "temperature": 0,
+          "format": "json"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        80,
+        208
+      ],
+      "id": "05981a7e-f5c5-4036-bc56-1f24a201c119",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "YDIYOEiHeMMDaXek",
+          "name": "Ollama local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=From: {{ $json.sender_email }}\nSubject: {{ $json.subject }}\n\n{{ $json.body }}",
+        "options": {
+          "systemMessage": "You are an email triage assistant for the support team of \"Musterfirma IT GmbH\", a German IT company. Today is {{ $now.toFormat('yyyy-MM-dd') }}.\n\nRead the email and return ONLY a JSON object with these fields:\n- category: one of \"invoice\", \"support\", \"job_application\", \"spam\", \"other\"\n- priority: \"high\" if a customer is blocked or a payment is overdue or due within 7 days of today; \"low\" for newsletters, spam and non-urgent questions; otherwise \"medium\"\n- sender_name: the person's name exactly as written in the email, or \"\" if no name is written. Never guess a name from the email address.\n- company: the sender's company, or \"\" if unknown\n- summary: one short sentence in English. If the email contains more than one request, mention all of them.\n- invoice_number, amount (number), currency, due_date (YYYY-MM-DD): only for invoices, otherwise \"\", 0, \"\", \"\"\n- language: \"de\" if the email body is written in German, \"en\" if it is written in English\n- reply_draft: only for support emails, otherwise \"\".\n\nRules for reply_draft:\n1. Write reply_draft ONLY in the language given in the \"language\" field. An English email must get an English reply, even though our company is German.\n2. German replies are formal: \"Sehr geehrter Herr <last name>,\" or \"Sehr geehrte Frau <last name>,\". If no name is known: \"Sehr geehrte Damen und Herren,\". English: \"Dear Mr/Ms <last name>,\" or \"Dear Sir or Madam,\".\n3. You write on behalf of Musterfirma IT GmbH. Sign with \"Ihr Support-Team, Musterfirma IT GmbH\" (German) or \"Your support team, Musterfirma IT GmbH\" (English). Never sign with the customer's company.\n4. Do not promise fixed times or solutions that are not in the email.\nNever invent facts that are not in the email.\n5. Acknowledge the problem, say that the support team is looking into it, and ask for missing details if needed. Never refuse to help."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        224,
+        0
+      ],
+      "id": "32c8f2ba-77b4-4631-a42e-9b5971ca1a2e",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c6051a74-3b9b-42a2-86f3-1181673f4588",
+              "name": "output",
+              "value": "={{ (o => (o.category === 'invoice' && o.due_date) ? Object.assign(o, { priority: (DateTime.fromISO(o.due_date).diff($now.startOf('day'), 'days').days <= 7 ? 'high' : 'medium') }) : o)(JSON.parse($json.output)) }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        592,
+        0
+      ],
+      "id": "f3fdc5b0-7451-45b6-b866-168a2cfc9c9f",
+      "name": "Triage email"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 4
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.category }}",
+                    "rightValue": "invoice",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "1331138e-2bf9-46c2-8c1f-9080a2680b9d"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Invoice"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 4
+                },
+                "conditions": [
+                  {
+                    "id": "ac4d01f6-be15-46a4-a188-8464a965069c",
+                    "leftValue": "={{ $json.output.category }}",
+                    "rightValue": "support",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Support"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 4
+                },
+                "conditions": [
+                  {
+                    "id": "29df921d-a0f4-4aa3-8292-aae447c4b1b4",
+                    "leftValue": "={{ $json.output.category }}",
+                    "rightValue": "job_application",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Job application"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Other"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.5,
+      "position": [
+        816,
+        0
+      ],
+      "id": "9792beeb-54fd-4806-822b-68f5d09fb98e",
+      "name": "Route by category"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "wdvLNn65Z2dmMjjv",
+          "mode": "list",
+          "cachedResultName": "invoices",
+          "cachedResultUrl": "/projects/pSYz5DhqjEzlKCS6/datatables/wdvLNn65Z2dmMjjv"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sender_email": "={{ $('Incoming email').item.json.sender_email }}",
+            "company": "={{ $json.output.company }}",
+            "invoice_number": "={{ $json.output.invoice_number }}",
+            "amount": "={{ $json.output.amount }}",
+            "currency": "={{ $json.output.currency }}",
+            "due_date": "={{ $json.output.due_date }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sender_email",
+              "displayName": "sender_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "invoice_number",
+              "displayName": "invoice_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "currency",
+              "displayName": "currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "due_date",
+              "displayName": "due_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        -208
+      ],
+      "id": "608a32cd-2a6e-4eff-9fe1-31be9682c05b",
+      "name": "Save invoice"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fb12624f-68e8-4549-993b-4222aaec9653",
+              "name": "status",
+              "value": "invoice saved",
+              "type": "string"
+            },
+            {
+              "id": "9e27b84f-9f27-4658-9697-0c72ab64ad16",
+              "name": "final_reply",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1264,
+        -208
+      ],
+      "id": "509f9160-f61e-4f88-8bcd-a18579390b9c",
+      "name": "Status: invoice saved"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ad3f6eee-8def-4a86-a927-49dd85da284f",
+              "name": "status",
+              "value": "forwarded to HR",
+              "type": "string"
+            },
+            {
+              "id": "23c60d15-acfc-46bb-ba1b-955e42618149",
+              "name": "final_reply",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1040,
+        96
+      ],
+      "id": "630b7bce-1bcc-41c7-be1f-81ffa4d5cbdb",
+      "name": "Status: forwarded to HR"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9e81db5a-51d3-4687-8a75-759517569bf9",
+              "name": "status",
+              "value": "ignored",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1120,
+        624
+      ],
+      "id": "1a5a5d5f-49c7-4d68-a7bc-7e072f968d32",
+      "name": "Status: ignored"
+    },
+    {
+      "parameters": {
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Decision",
+              "fieldType": "dropdown",
+              "fieldName": "decision",
+              "defaultValue": "Approve",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Approve"
+                  },
+                  {
+                    "option": "Reject"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Reply",
+              "fieldType": "textarea",
+              "fieldName": "reply",
+              "defaultValue": "=  {{ $json.output.reply_draft }}"
+            }
+          ]
+        },
+        "options": {
+          "formTitle": "Human approval needed",
+          "formDescription": "=  {{ 'Support request from ' + $('Incoming email').item.json.sender_email + ': ' + $json.output.summary }}"
+        }
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        0
+      ],
+      "id": "eb45d8a3-6449-4f39-ac03-9ec3e6c1ac4b",
+      "name": "Review reply",
+      "webhookId": "6f70629f-e8bd-4bef-b62f-c798959993a0"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cbb66f88-2894-4cfe-b015-6b99a6d81bd3",
+              "name": "status",
+              "value": "={{ $json.decision === 'Approve' ? 'reply approved' : 'reply rejected' }}",
+              "type": "string"
+            },
+            {
+              "id": "fe95db7f-520e-481d-a9ec-0eb989d2e620",
+              "name": "final_reply",
+              "value": "={{ $json.decision === 'Approve' ? $json.reply : '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1424,
+        0
+      ],
+      "id": "8f70c3f1-c808-4670-88e2-85caf2b1d97f",
+      "name": "Status: reply decision"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "yueNM3q1POvseBbf",
+          "mode": "list",
+          "cachedResultName": "email_log",
+          "cachedResultUrl": "/projects/pSYz5DhqjEzlKCS6/datatables/yueNM3q1POvseBbf"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sender_email": "={{ $('Incoming email').item.json.sender_email }}",
+            "subject": "={{ $('Incoming email').item.json.subject }}",
+            "category": "={{ $('Triage email').item.json.output.category }}",
+            "priority": "={{ $('Triage email').item.json.output.priority }}",
+            "summary": "={{ $('Triage email').item.json.output.summary }}",
+            "status": "={{ $json.status }}",
+            "final_reply": "={{ $json.final_reply }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sender_email",
+              "displayName": "sender_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "final_reply",
+              "displayName": "final_reply",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1488,
+        -208
+      ],
+      "id": "ed0eacff-64bb-43f1-8a51-385c51de298f",
+      "name": "Log email"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "Email processed",
+        "completionMessage": "=   {{ 'Category: ' + $('Triage email').item.json.output.category + ' | Priority: ' + $('Triage email').item.json.output.priority + ' | Status: ' + $json.status }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        1712,
+        -208
+      ],
+      "id": "70be915e-a132-48db-aa51-91a9829927d9",
+      "name": "Show result",
+      "webhookId": "34565aec-2864-498c-8935-d8479f869be1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Incoming email": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Triage email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Triage email": {
+      "main": [
+        [
+          {
+            "node": "Route by category",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by category": {
+      "main": [
+        [
+          {
+            "node": "Save invoice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Review reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Status: forwarded to HR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Status: ignored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save invoice": {
+      "main": [
+        [
+          {
+            "node": "Status: invoice saved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status: forwarded to HR": {
+      "main": [
+        [
+          {
+            "node": "Log email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review reply": {
+      "main": [
+        [
+          {
+            "node": "Status: reply decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status: invoice saved": {
+      "main": [
+        [
+          {
+            "node": "Log email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status: ignored": {
+      "main": [
+        [
+          {
+            "node": "Log email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status: reply decision": {
+      "main": [
+        [
+          {
+            "node": "Log email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log email": {
+      "main": [
+        [
+          {
+            "node": "Show result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0209658a-b7a9-44b3-b11f-8e41c9223bdd",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ffed7178cc4809f0e77e3f0cd76f20dae296c424865f745c75eab0626646dd8d"
+  },
+  "nodeGroups": [],
+  "id": "IXwynvw3BW500wfA",
+  "tags": []
+}
